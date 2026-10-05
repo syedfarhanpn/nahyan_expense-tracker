@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Transaction, TransactionType, WorkSource, Currency, PaymentStatus } from '@/lib/types';
-import { X, Film } from 'lucide-react';
+import { X, Film, Trash2 } from 'lucide-react';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
