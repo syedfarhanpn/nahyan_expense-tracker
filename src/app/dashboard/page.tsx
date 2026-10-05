@@ -288,7 +288,6 @@ export default function DashboardPage() {
             title="Total Earned ($)"
             value={`$${metrics.totalEarnedUSD.toLocaleString()}`}
             subtitle={`≈ ₹${Math.round(metrics.totalEarnedUSD * exchangeRate).toLocaleString('en-IN')} at current rate`}
-            metricBadge={isRateLive ? `₹${exchangeRate.toFixed(2)} Live` : `₹${exchangeRate.toFixed(2)}`}
           />
 
           <StatCard
