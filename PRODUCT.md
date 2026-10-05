@@ -8,19 +8,19 @@ web
 
 ## Users
 
-Freelancers, independent consultants, and contract professionals working with both domestic and international clients, requiring multi-tenant accounts, customizable currencies, and contract tracking.
+Freelance Video Editors, Post-Production Specialists, Motion Designers, and Colorists managing high-volume client projects, YouTube creator retainers, commercial cuts, and international client billings with multi-currency payouts.
 
 ## Product Purpose
 
-A comprehensive freelance business management platform that enables freelancers to track income and expenses, generate professional invoices, estimate taxes, convert between international and local currencies (such as USD and INR), and manage client billing. Success means freelancers gain complete clarity over their net earnings, active client contracts, tax obligations, and receivables without relying on fragmented spreadsheets.
+A dedicated financial and workflow cockpit engineered specifically for freelance video editors. It unifies project milestone tracking (Rough Cut, Client Revisions, Final Master Delivery), dual-currency earnings (USD client retainers converting to domestic currency like INR), gear and subscription overhead deductions (Adobe CC, DaVinci Studio, plugins, cloud render/storage, cameras), invoice generation, and tax forecasting. Success means the video editor never needs another spreadsheet or generic finance app: their entire creative business is visible with studio-grade precision.
 
 ## Positioning
 
-An integrated freelance financial cockpit designed specifically for cross-border and domestic contracting workflows—merging real-time exchange conversion, milestone and contract tracking, automated tax estimation, and client invoicing into one cohesive, multi-tenant application.
+The ultimate financial cockpit for post-production freelancers—marrying the dark-mode precision, clip milestone rhythm, and color-accurate aesthetic of professional video editing suites (DaVinci Resolve, Premiere Pro) with uncompromising multi-tenant financial intelligence, automated currency conversion, and contract tracking.
 
 ## Operating Context
 
-Web browser on desktop and mobile. Used actively during contract milestone completions, monthly billing and invoicing cycles, expense logging, and quarterly or annual tax review periods.
+Web browser on desktop editing workstations (multi-monitor setups, color-accurate displays) and mobile on the go. Used between editing sprints, during client cut reviews, milestone deliveries, monthly retainer cycles, and tax filing periods.
 
 ## Capabilities and Constraints
 

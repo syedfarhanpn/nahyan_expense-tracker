@@ -8,6 +8,12 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-inter)', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        heading: ['var(--font-noto-sans)', 'sans-serif'],
+        title: ['var(--font-inter)', 'sans-serif'],
+        mono: ['var(--font-inter)', 'Inter', 'sans-serif'],
+      },
       colors: {
         brand: {
           50: '#f0f7ff',

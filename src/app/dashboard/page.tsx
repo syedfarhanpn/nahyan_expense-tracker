@@ -1,36 +1,109 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { StatCard } from '@/components/StatCard';
+import { FilterMode } from '@/components/FilterDropdown';
 import { GrowthChart } from '@/components/GrowthChart';
-import { DistributionChart } from '@/components/DistributionChart';
 import { TransactionsTable } from '@/components/TransactionsTable';
 import { AddTransactionModal } from '@/components/AddTransactionModal';
-import { CurrencyConverter } from '@/components/CurrencyConverter';
-import { INITIAL_TRANSACTIONS, INITIAL_EXCHANGE_RATE, MONTH_OPTIONS } from '@/lib/mockData';
-import { Transaction, DashboardSummary } from '@/lib/types';
-import { 
-  DollarSign, 
-  Wallet, 
-  TrendingUp, 
-  CheckCircle, 
-  Clock, 
-  Layers, 
-  Briefcase, 
-  ArrowRightLeft,
-  Calendar,
-  Filter,
-  Download,
-  Sparkles
-} from 'lucide-react';
+import { EditNameModal } from '@/components/EditNameModal';
+import { SetGoalModal } from '@/components/SetGoalModal';
+import { INITIAL_TRANSACTIONS, INITIAL_EXCHANGE_RATE } from '@/lib/mockData';
+import { Transaction } from '@/lib/types';
+import { Target } from 'lucide-react';
+import { GoalCard } from '@/components/GoalCard';
+import { GoalAchievedModal } from '@/components/GoalAchievedModal';
 
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
   const [exchangeRate, setExchangeRate] = useState<number>(INITIAL_EXCHANGE_RATE);
-  const [selectedMonth, setSelectedMonth] = useState<string>('jul'); // Default selected month: July
+  const [rateDateText, setRateDateText] = useState<string>('');
+  const [isRateLoading, setIsRateLoading] = useState(false);
+  const [isRateLive, setIsRateLive] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+  // Profile Name and Goal State
+  const [dashboardName, setDashboardName] = useState<string>('Nahyan');
+  const [personalGoal, setPersonalGoal] = useState<number>(200000);
+  const [isEditNameOpen, setIsEditNameOpen] = useState(false);
+  const [isSetGoalOpen, setIsSetGoalOpen] = useState(false);
+  const [showGoalAchieved, setShowGoalAchieved] = useState(false);
+  const [hasAcknowledgedGoal, setHasAcknowledgedGoal] = useState(false);
+
+  // Load saved name and goal from localStorage safely on mount
+  useEffect(() => {
+    try {
+      const savedName = localStorage.getItem('nahyan_dashboard_name');
+      if (savedName) setDashboardName(savedName);
+      const savedGoal = localStorage.getItem('nahyan_personal_goal');
+      if (savedGoal) {
+        const parsed = parseFloat(savedGoal);
+        if (!isNaN(parsed) && parsed > 0) setPersonalGoal(parsed);
+      }
+    } catch {}
+  }, []);
+
+  const handleSaveName = (newName: string) => {
+    setDashboardName(newName);
+    try {
+      localStorage.setItem('nahyan_dashboard_name', newName);
+    } catch {}
+  };
+
+  const handleSaveGoal = (newGoal: number) => {
+    setPersonalGoal(newGoal);
+    setShowGoalAchieved(false);
+    try {
+      localStorage.setItem('nahyan_personal_goal', newGoal.toString());
+    } catch {}
+  };
+
+  // Handle goal achieved acknowledgment state
+  useEffect(() => {
+    try {
+      const ack = localStorage.getItem('nahyan_goal_achieved_for');
+      if (ack && parseFloat(ack) === personalGoal) {
+        setHasAcknowledgedGoal(true);
+      } else {
+        setHasAcknowledgedGoal(false);
+      }
+    } catch {}
+  }, [personalGoal]);
+
+
+  // Auto-fetch live dollar exchange rate for the current date
+  const fetchLiveRate = useCallback(async () => {
+    setIsRateLoading(true);
+    try {
+      const res = await fetch('/api/exchange-rate');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.rate && typeof data.rate === 'number') {
+          setExchangeRate(data.rate);
+          setRateDateText(data.dateText || '');
+          setIsRateLive(Boolean(data.isLive));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to auto-fetch exchange rate:', err);
+    } finally {
+      setIsRateLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveRate();
+  }, [fetchLiveRate]);
+
+  // Top Right Filter State
+  const [filterMode, setFilterMode] = useState<FilterMode>('custom');
+  const [selectedYear, setSelectedYear] = useState<string>(() => new Date().getFullYear().toString());
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const monthsList = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    return monthsList[new Date().getMonth()];
+  });
 
   // Recalculate transaction INR amounts whenever exchange rate changes
   const activeTransactions = useMemo(() => {
@@ -46,75 +119,76 @@ export default function DashboardPage() {
     });
   }, [transactions, exchangeRate]);
 
-  // Compute summary stats based on selected month (or all months)
-  const summary: DashboardSummary = useMemo(() => {
-    const monthFiltered = selectedMonth === 'all' 
-      ? activeTransactions 
-      : activeTransactions.filter(tx => tx.month.toLowerCase() === selectedMonth.toLowerCase());
+  // Apply Top-Right Filter (Last 7 Days, Last 30 Days, Year & Month, or All Time)
+  const filteredTransactions = useMemo(() => {
+    if (filterMode === 'all') {
+      return activeTransactions;
+    }
 
-    const incomeTxs = monthFiltered.filter(tx => tx.type === 'income');
-    const expenseTxs = monthFiltered.filter(tx => tx.type === 'expense');
+    if (filterMode === '7d' || filterMode === '30d') {
+      const timestamps = activeTransactions
+        .map(t => new Date(t.date).getTime())
+        .filter(ts => !isNaN(ts));
+      const maxTime = timestamps.length > 0 ? Math.max(...timestamps) : Date.now();
+      const days = filterMode === '7d' ? 7 : 30;
+      const threshold = maxTime - (days * 24 * 60 * 60 * 1000);
 
-    let totalUSD = 0;
-    let totalINR = 0;
-    let paidINR = 0;
-    let unpaidINR = 0;
-    let totalRevenueINR = 0;
-    let totalPaidRevenueINR = 0;
-    let totalUnpaidRevenueINR = 0;
-    let totalExpensesINR = 0;
-    let uvvWorkCount = 0;
-    let outsideWorkCount = 0;
+      return activeTransactions.filter(t => {
+        const time = new Date(t.date).getTime();
+        return time >= threshold && time <= maxTime;
+      });
+    }
 
-    incomeTxs.forEach(tx => {
-      if (tx.currency === 'USD') {
-        totalUSD += tx.amount;
-      } else {
-        totalINR += tx.amount;
-      }
-
-      totalRevenueINR += tx.inr_amount;
-
-      if (tx.status === 'Paid') {
-        totalPaidRevenueINR += tx.inr_amount;
-        if (tx.currency === 'INR') paidINR += tx.amount;
-      } else {
-        totalUnpaidRevenueINR += tx.inr_amount;
-        if (tx.currency === 'INR') unpaidINR += tx.amount;
-      }
-
-      if (tx.source === 'UVV Work') uvvWorkCount++;
-      if (tx.source === 'Outside Work') outsideWorkCount++;
+    // 'custom': filter by selected Year and Month
+    return activeTransactions.filter(t => {
+      const txYear = new Date(t.date).getFullYear().toString();
+      const matchesYear = selectedYear === 'all' || txYear === selectedYear;
+      const matchesMonth = selectedMonth === 'all' || t.month.toLowerCase() === selectedMonth.toLowerCase();
+      return matchesYear && matchesMonth;
     });
+  }, [activeTransactions, filterMode, selectedYear, selectedMonth]);
 
-    expenseTxs.forEach(tx => {
-      totalExpensesINR += tx.inr_amount;
-    });
+  // Compute the 4 Core Metrics: Total Earned INR, Total Earned USD, Total Projects Done, Expenses
+  const metrics = useMemo(() => {
+    const incomeTxs = filteredTransactions.filter(t => t.type === 'income');
+    const expenseTxs = filteredTransactions.filter(t => t.type === 'expense');
+
+    const totalEarnedINR = incomeTxs.reduce((sum, t) => sum + (t.inr_amount || 0), 0);
+    const totalEarnedUSD = incomeTxs.filter(t => t.currency === 'USD').reduce((sum, t) => sum + t.amount, 0);
+    const totalProjectsDone = incomeTxs.length;
+    const totalExpensesINR = expenseTxs.reduce((sum, t) => sum + (t.inr_amount || 0), 0);
 
     return {
-      selectedMonth,
-      usdToInrRate: exchangeRate,
-      totalUSD,
-      totalINR,
-      paidINR,
-      unpaidINR,
-      totalRevenueINR,
-      totalPaidRevenueINR,
-      totalUnpaidRevenueINR,
+      totalEarnedINR,
+      totalEarnedUSD,
+      totalProjectsDone,
       totalExpensesINR,
-      netProfitINR: totalRevenueINR - totalExpensesINR,
-      uvvWorkCount,
-      outsideWorkCount,
     };
-  }, [activeTransactions, selectedMonth, exchangeRate]);
+  }, [filteredTransactions]);
 
-  // Compute monthly growth data (Jan - Dec 2026) for chart
+  // Trigger modal when goal reached
+  useEffect(() => {
+    if (personalGoal > 0 && metrics.totalEarnedINR >= personalGoal && !hasAcknowledgedGoal) {
+      setShowGoalAchieved(true);
+    }
+  }, [metrics.totalEarnedINR, personalGoal, hasAcknowledgedGoal]);
+
+  const handleCloseGoalAchieved = () => {
+    setShowGoalAchieved(false);
+    setHasAcknowledgedGoal(true);
+    try {
+      localStorage.setItem('nahyan_goal_achieved_for', personalGoal.toString());
+    } catch {}
+  };
+
+
+  // Growth Chart Data (Jan - Dec 2026)
   const growthData = useMemo(() => {
     const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     const monthLabels: Record<string, string> = {
-      jan: 'Jan', feb: 'Feb', mar: 'Mar', apr: 'Apr',
-      may: 'May', jun: 'Jun', jul: 'Jul', aug: 'Aug',
-      sep: 'Sep', oct: 'Oct', nov: 'Nov', dec: 'Dec'
+      jan: 'JAN', feb: 'FEB', mar: 'MAR', apr: 'APR',
+      may: 'MAY', jun: 'JUN', jul: 'JUL', aug: 'AUG',
+      sep: 'SEP', oct: 'OCT', nov: 'NOV', dec: 'DEC'
     };
 
     return months.map(m => {
@@ -142,193 +216,113 @@ export default function DashboardPage() {
 
   // Handle Delete
   const handleDeleteTransaction = (id: string) => {
-    if (confirm('Are you sure you want to delete this transaction record?')) {
+    if (confirm('Are you sure you want to delete this record?')) {
       setTransactions(prev => prev.filter(t => t.id !== id));
     }
   };
 
-  // Export Summary Report
-  const handleExportCSV = () => {
-    const headers = ['ID', 'Title', 'Type', 'Source', 'Currency', 'Amount', 'Exchange Rate', 'INR Amount', 'Status', 'Date', 'Month', 'Client'];
-    const rows = activeTransactions.map(t => [
-      t.id, t.title, t.type, t.source, t.currency, t.amount, t.exchange_rate, t.inr_amount, t.status, t.date, t.month, t.client_name || ''
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `nahyan_earnings_report_${selectedMonth}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Handle Interactive Animated Toggle for Settlement Status
+  const handleToggleStatus = (id: string) => {
+    setTransactions(prev => prev.map(t => {
+      if (t.id === id) {
+        return {
+          ...t,
+          status: t.status === 'Paid' ? 'Unpaid' : 'Paid',
+        };
+      }
+      return t;
+    }));
   };
 
+  const goalPercentage = personalGoal > 0 ? Math.min(100, Math.round((metrics.totalEarnedINR / personalGoal) * 100)) : 0;
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+    <div className="min-h-screen bg-black text-white antialiased selection:bg-white selection:text-black">
       
-      {/* Top Navbar */}
+      {/* Top Header with Dynamic Name, Live Rate, Filters, and Profile Menu */}
       <Navbar 
         onOpenAddModal={() => {
           setEditingTransaction(null);
           setIsModalOpen(true);
         }}
+        filterMode={filterMode}
+        selectedYear={selectedYear}
+        selectedMonth={selectedMonth}
+        onSelectPreset={(preset) => {
+          if (preset === 'all') {
+            setFilterMode('all');
+            setSelectedYear('all');
+            setSelectedMonth('all');
+          } else {
+            setFilterMode(preset);
+          }
+        }}
+        onSelectYearMonth={(year, month) => {
+          setFilterMode('custom');
+          setSelectedYear(year);
+          setSelectedMonth(month);
+        }}
+        exchangeRate={exchangeRate}
+        rateDateText={rateDateText}
+        isRateLoading={isRateLoading}
+        onRefreshRate={fetchLiveRate}
+        dashboardName={dashboardName}
+        personalGoal={personalGoal}
+        currentEarningsINR={metrics.totalEarnedINR}
+        onOpenEditName={() => setIsEditNameOpen(true)}
+        onOpenSetGoal={() => setIsSetGoalOpen(true)}
       />
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Main Clean Workspace - 90% Screen Width */}
+      <main className="w-[90%] mx-auto py-8 space-y-6">
         
-        {/* Dashboard Title & Month Selector Banner */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 shadow-sm">
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
-                FREELANCE REVENUE DASHBOARD
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                Live
-              </span>
-            </div>
-            <p className="mt-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-              Overview of client revenues, USD/INR conversions, and work distribution.
-            </p>
-          </div>
-
-          {/* Controls: Month Selector & Export */}
-          <div className="flex flex-wrap items-center gap-3">
-            
-            {/* Selected Month Dropdown */}
-            <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800/90 px-3 py-2 rounded-xl border border-gray-200 dark:border-slate-700">
-              <Calendar className="w-4 h-4 text-brand-600 dark:text-brand-400" />
-              <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Selected Month:</span>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none cursor-pointer"
-              >
-                {MONTH_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value} className="dark:bg-slate-900 text-gray-900 dark:text-white">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Export CSV Button */}
-            <button
-              onClick={handleExportCSV}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 font-semibold text-xs border border-gray-200 dark:border-slate-700 transition"
-              title="Download CSV Report"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export CSV</span>
-            </button>
-
-          </div>
-        </div>
-
-        {/* Primary KPI Grid (Matching Excel Header Figures) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* The 4 Core Telemetry Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Total Revenue (INR)"
-            value={`₹${summary.totalRevenueINR.toLocaleString('en-IN')}`}
-            subtitle={selectedMonth === 'all' ? 'Across all months' : `Filtered for ${selectedMonth.toUpperCase()}`}
-            icon={TrendingUp}
-            colorScheme="blue"
-            trend="+100% Paid"
-            trendType="positive"
+            title="Total Earned (INR)"
+            value={`₹${metrics.totalEarnedINR.toLocaleString('en-IN')}`}
+            subtitle={`Gross income (incl. USD @ ₹${exchangeRate.toFixed(2)})`}
           />
 
           <StatCard
-            title="Total Paid Revenue (INR)"
-            value={`₹${summary.totalPaidRevenueINR.toLocaleString('en-IN')}`}
-            subtitle="Received in Bank Account"
-            icon={CheckCircle}
-            colorScheme="emerald"
-            trend="Settled"
-            trendType="positive"
+            title="Total Earned ($)"
+            value={`$${metrics.totalEarnedUSD.toLocaleString()}`}
+            subtitle={`≈ ₹${Math.round(metrics.totalEarnedUSD * exchangeRate).toLocaleString('en-IN')} at current rate`}
+            metricBadge={isRateLive ? `₹${exchangeRate.toFixed(2)} Live` : `₹${exchangeRate.toFixed(2)}`}
           />
 
           <StatCard
-            title="Total Unpaid Revenue (INR)"
-            value={`₹${summary.totalUnpaidRevenueINR.toLocaleString('en-IN')}`}
-            subtitle="Pending Outstanding Invoices"
-            icon={Clock}
-            colorScheme={summary.totalUnpaidRevenueINR > 0 ? 'amber' : 'emerald'}
-            trend={summary.totalUnpaidRevenueINR > 0 ? 'Action Required' : 'No Pending Balance'}
-            trendType={summary.totalUnpaidRevenueINR > 0 ? 'negative' : 'positive'}
+            title="Total Projects Done"
+            value={`${metrics.totalProjectsDone}`}
+            subtitle="Completed client deliverables"
+          />
+
+          <StatCard
+            title="Expenses"
+            value={`₹${metrics.totalExpensesINR.toLocaleString('en-IN')}`}
+            subtitle="Operating & equipment costs"
           />
         </div>
 
-        {/* Secondary Detailed Currency Metrics (USD, INR, Rate, Work Counts) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 shadow-sm">
-            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total USD</span>
-            <p className="text-xl font-extrabold text-gray-900 dark:text-white mt-1">${summary.totalUSD.toLocaleString()}</p>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">USD Earnings</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 shadow-sm">
-            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total INR</span>
-            <p className="text-xl font-extrabold text-gray-900 dark:text-white mt-1">₹{summary.totalINR.toLocaleString('en-IN')}</p>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">Direct INR Payments</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 shadow-sm">
-            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Paid INR</span>
-            <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">₹{summary.paidINR.toLocaleString('en-IN')}</p>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">Cleared Payments</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 shadow-sm">
-            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">USD to INR Rate</span>
-            <p className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 mt-1">₹{summary.usdToInrRate}</p>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">Conversion Multiplier</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 shadow-sm">
-            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">UVV Work Count</span>
-            <p className="text-xl font-extrabold text-blue-600 dark:text-blue-400 mt-1">{summary.uvvWorkCount}</p>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">UVV Platform Tasks</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 shadow-sm">
-            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Outside Work Count</span>
-            <p className="text-xl font-extrabold text-rose-600 dark:text-rose-400 mt-1">{summary.outsideWorkCount}</p>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400">External Client Projects</span>
-          </div>
-        </div>
-
-        {/* Visual Charts Grid (Monthly Growth & Work Distribution) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Monthly Revenue Growth Chart (Line/Area) - Takes 2 Cols */}
-          <div className="lg:col-span-2 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 shadow-sm">
+        {/* Revenue Velocity Waveform Chart & Monthly Goal */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 studio-panel rounded-2xl p-6">
             <GrowthChart
               data={growthData}
-              selectedMonth={selectedMonth}
-              onSelectMonth={(m) => setSelectedMonth(m)}
+              selectedMonth={filterMode === 'custom' ? selectedMonth : 'all'}
             />
           </div>
-
-          {/* Work Distribution Pie Chart - Takes 1 Col */}
-          <div className="lg:col-span-1 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 shadow-sm">
-            <DistributionChart
-              uvvCount={summary.uvvWorkCount}
-              outsideCount={summary.outsideWorkCount}
-            />
-          </div>
-
+          
+          {personalGoal > 0 && (
+            <div className="lg:col-span-1">
+              <GoalCard currentValue={metrics.totalEarnedINR} goalValue={personalGoal} />
+            </div>
+          )}
         </div>
 
-        {/* Currency Converter Section */}
-        <CurrencyConverter
-          rate={exchangeRate}
-          onRateChange={(newRate) => setExchangeRate(newRate)}
-        />
-
-        {/* Full Transactions Log Table */}
+        {/* Production & Expense Ledger Table with Animated Settlement Toggle */}
         <TransactionsTable
-          transactions={activeTransactions}
+          transactions={filteredTransactions}
           onDeleteTransaction={handleDeleteTransaction}
           onEditTransaction={(tx) => {
             setEditingTransaction(tx);
@@ -338,6 +332,7 @@ export default function DashboardPage() {
             setEditingTransaction(null);
             setIsModalOpen(true);
           }}
+          onToggleStatus={handleToggleStatus}
         />
 
       </main>
@@ -350,8 +345,33 @@ export default function DashboardPage() {
           setEditingTransaction(null);
         }}
         onSave={handleSaveTransaction}
+        onDelete={handleDeleteTransaction}
         editTransaction={editingTransaction}
         defaultExchangeRate={exchangeRate}
+      />
+
+      {/* Edit Profile Name Modal */}
+      <EditNameModal
+        isOpen={isEditNameOpen}
+        onClose={() => setIsEditNameOpen(false)}
+        currentName={dashboardName}
+        onSaveName={handleSaveName}
+      />
+
+      {/* Set Personal Goal Modal */}
+      <SetGoalModal
+        isOpen={isSetGoalOpen}
+        onClose={() => setIsSetGoalOpen(false)}
+        currentGoal={personalGoal}
+        onSaveGoal={handleSaveGoal}
+      />
+
+      {/* Goal Achieved Animated Pop-up Modal */}
+      <GoalAchievedModal
+        isOpen={showGoalAchieved}
+        currentGoal={personalGoal}
+        onSetNewGoal={handleSaveGoal}
+        onClose={handleCloseGoalAchieved}
       />
 
     </div>
