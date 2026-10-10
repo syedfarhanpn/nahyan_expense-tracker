@@ -24,6 +24,11 @@ export default function DashboardClient({ initialUser, initialTransactions }: { 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
+  // Sync state with server props on revalidation
+  useEffect(() => {
+    setTransactions(initialTransactions as Transaction[]);
+  }, [initialTransactions]);
+
   // Profile Name and Goal State
   const [dashboardName, setDashboardName] = useState<string>(initialUser.name || 'User');
   const [personalGoal, setPersonalGoal] = useState<number>(initialUser.personalGoal || 0);
@@ -215,6 +220,8 @@ export default function DashboardClient({ initialUser, initialTransactions }: { 
 
   // Handle Interactive Animated Toggle for Settlement Status
   const handleToggleStatus = async (id: string) => {
+    if (id.startsWith('temp-')) return;
+
     let newStatus = 'Paid';
     setTransactions(prev => prev.map(t => {
       if (t.id === id) {

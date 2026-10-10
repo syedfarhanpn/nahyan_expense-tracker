@@ -84,8 +84,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     const monthsList = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     const resolvedMonth = !isNaN(dateObj.getTime()) ? monthsList[dateObj.getMonth()] : (month || 'jul');
 
-    onSave({
-      id: editTransaction ? editTransaction.id : `tx-${Date.now()}`,
+    const payload: Partial<Transaction> = {
       title,
       type,
       source: type === 'expense' ? source : 'Outside Work',
@@ -99,7 +98,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       month: resolvedMonth,
       client_name: clientName,
       notes,
-    });
+    };
+
+    if (editTransaction) {
+      payload.id = editTransaction.id;
+    }
+
+    onSave(payload);
 
     onClose();
   };
